@@ -1,0 +1,30 @@
+path: ./dataset
+train: images/train
+val: images/val
+test: images/test
+
+nc: 23
+names:
+  0: syringe
+  1: needle
+  2: lancet
+  3: scalpel
+  4: blade
+  5: sharp_medical_instrument
+  6: blood_stained_gauze
+  7: contaminated_cotton
+  8: dressing
+  9: anatomical_waste
+  10: pathological_waste
+  11: iv_tube
+  12: contaminated_plastic_tubing
+  13: plastic_medical_item
+  14: catheter
+  15: urine_bag
+  16: disposable_plastic_medical_item
+  17: glass_vial
+  18: medicine_bottle_glass
+  19: broken_glass_medical_item
+  20: glass_ampoule
+  21: medicine_packaging
+  22: general_medical_waste

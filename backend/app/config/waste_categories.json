@@ -1,0 +1,142 @@
+{
+  "categories": {
+    "WHITE": {
+      "code": "WHITE",
+      "name": "Sharps & Metal Contaminated Waste",
+      "bin_color": "WHITE",
+      "hex_color": "#F8FAFC",
+      "text_color": "#0F172A",
+      "border_color": "#CBD5E1",
+      "hazard_level": "CRITICAL",
+      "autoclave_required": true,
+      "incineration_required": false,
+      "supported_objects": [
+        "SYRINGE",
+        "NEEDLE",
+        "SCALPEL",
+        "BLADE",
+        "LANCET",
+        "SHARP_UNKNOWN"
+      ]
+    },
+    "BLUE": {
+      "code": "BLUE",
+      "name": "Glassware & Cytotoxic Medicine Vials",
+      "bin_color": "BLUE",
+      "hex_color": "#3B82F6",
+      "text_color": "#FFFFFF",
+      "border_color": "#1D4ED8",
+      "hazard_level": "HIGH",
+      "autoclave_required": true,
+      "incineration_required": false,
+      "supported_objects": [
+        "BROKEN_GLASS",
+        "GLASS_VIAL",
+        "MEDICINE_BOTTLE",
+        "VIAL"
+      ]
+    },
+    "YELLOW": {
+      "code": "YELLOW",
+      "name": "Anatomical, Soiled & Bio-Infectious Waste",
+      "bin_color": "YELLOW",
+      "hex_color": "#EAB308",
+      "text_color": "#0F172A",
+      "border_color": "#CA8A04",
+      "hazard_level": "HIGH",
+      "autoclave_required": false,
+      "incineration_required": true,
+      "supported_objects": [
+        "BLOOD_SOAKED_GAUZE",
+        "ANATOMICAL_WASTE",
+        "INFECTIOUS_WASTE",
+        "BLOOD_BAG",
+        "GAUZE",
+        "COTTON",
+        "BANDAGE",
+        "PHARMACEUTICAL_WASTE",
+        "CHEMICAL_CONTAINER"
+      ]
+    },
+    "RED": {
+      "code": "RED",
+      "name": "Contaminated Recyclable Plastics",
+      "bin_color": "RED",
+      "hex_color": "#EF4444",
+      "text_color": "#FFFFFF",
+      "border_color": "#B91C1C",
+      "hazard_level": "MODERATE",
+      "autoclave_required": true,
+      "incineration_required": false,
+      "supported_objects": [
+        "IV_TUBE",
+        "IV_SET",
+        "CONTAMINATED_PLASTIC",
+        "PLASTIC_TUBING",
+        "GLOVE",
+        "MASK",
+        "URINE_BAG",
+        "PLASTIC_MEDICAL_CONTAINER"
+      ]
+    },
+    "BLACK": {
+      "code": "BLACK",
+      "name": "General Non-Biomedical Municipal Waste",
+      "bin_color": "BLACK",
+      "hex_color": "#1E293B",
+      "text_color": "#FFFFFF",
+      "border_color": "#0F172A",
+      "hazard_level": "LOW",
+      "autoclave_required": false,
+      "incineration_required": false,
+      "supported_objects": [
+        "GENERAL_NON_BIOMEDICAL_WASTE"
+      ]
+    },
+    "UNKNOWN": {
+      "code": "UNKNOWN",
+      "name": "Unidentified / Content Not Observable",
+      "bin_color": "UNKNOWN",
+      "hex_color": "#64748B",
+      "text_color": "#FFFFFF",
+      "border_color": "#475569",
+      "hazard_level": "HIGH",
+      "autoclave_required": false,
+      "incineration_required": false,
+      "supported_objects": [
+        "UNKNOWN_OBJECT"
+      ]
+    }
+  },
+  "object_to_category": {
+    "SYRINGE": "WHITE",
+    "NEEDLE": "WHITE",
+    "SCALPEL": "WHITE",
+    "BLADE": "WHITE",
+    "LANCET": "WHITE",
+    "SHARP_UNKNOWN": "WHITE",
+    "BROKEN_GLASS": "BLUE",
+    "GLASS_VIAL": "BLUE",
+    "MEDICINE_BOTTLE": "BLUE",
+    "VIAL": "BLUE",
+    "BLOOD_SOAKED_GAUZE": "YELLOW",
+    "ANATOMICAL_WASTE": "YELLOW",
+    "INFECTIOUS_WASTE": "YELLOW",
+    "BLOOD_BAG": "YELLOW",
+    "GAUZE": "YELLOW",
+    "COTTON": "YELLOW",
+    "BANDAGE": "YELLOW",
+    "PHARMACEUTICAL_WASTE": "YELLOW",
+    "CHEMICAL_CONTAINER": "YELLOW",
+    "IV_TUBE": "RED",
+    "IV_SET": "RED",
+    "CONTAMINATED_PLASTIC": "RED",
+    "PLASTIC_TUBING": "RED",
+    "GLOVE": "RED",
+    "MASK": "RED",
+    "URINE_BAG": "RED",
+    "PLASTIC_MEDICAL_CONTAINER": "RED",
+    "GENERAL_NON_BIOMEDICAL_WASTE": "BLACK",
+    "UNKNOWN_OBJECT": "UNKNOWN"
+  }
+}

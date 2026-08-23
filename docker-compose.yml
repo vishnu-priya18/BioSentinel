@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: biosentinel_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - KMP_DUPLICATE_LIB_OK=TRUE
+    volumes:
+      - ./backend/ml/models:/app/backend/ml/models
+      - ./biosentinel.db:/app/biosentinel.db
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.frontend
+    container_name: biosentinel_frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
