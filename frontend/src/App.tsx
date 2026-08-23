@@ -11,6 +11,7 @@ import { RoverPage } from './components/RoverPage';
 import { AuditPage } from './components/AuditPage';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { SettingsPage } from './components/SettingsPage';
+import { ModelTrainingPage } from './components/ModelTrainingPage';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<string>('scan');
@@ -27,6 +28,7 @@ export function App() {
       case 'rover': return <RoverPage />;
       case 'audit': return <AuditPage />;
       case 'analytics': return <AnalyticsPage />;
+      case 'training': return <ModelTrainingPage />;
       case 'settings': return <SettingsPage />;
       default: return <ScanPage />;
     }

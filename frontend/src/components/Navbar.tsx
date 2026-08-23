@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, LayoutDashboard, ShieldCheck, QrCode, Truck, Database, Activity, Settings, Cpu, Radio } from 'lucide-react';
+import { Camera, LayoutDashboard, ShieldCheck, QrCode, Truck, Database, Activity, Settings, Cpu, Radio, BarChart2 } from 'lucide-react';
 import { api } from '../services/api';
 
 interface NavbarProps {
@@ -33,6 +33,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
     { id: 'bins', label: 'Smart Bins', icon: Database },
     { id: 'rover', label: 'Rover AMR', icon: Radio },
     { id: 'audit', label: 'Audit Chain', icon: Cpu },
+    { id: 'training', label: 'Model Training', icon: BarChart2 },
     { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];

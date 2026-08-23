@@ -9,13 +9,25 @@ export const api = {
     return res.data;
   },
 
+  getTrainingMetrics: async () => {
+    const res = await axios.get(`${API_BASE}/system/training-metrics`);
+    return res.data;
+  },
+
   initDefaultModel: async () => {
     const res = await axios.post(`${API_BASE}/system/init-default-model`);
     return res.data;
   },
 
+  detectVision: async (formData: FormData) => {
+    const res = await axios.post(`${API_BASE}/vision/detect`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+    return res.data;
+  },
+
   analyzeImage: async (formData: FormData): Promise<WasteAnalysisResponse> => {
-    const res = await axios.post<WasteAnalysisResponse>(`${API_BASE}/detection/analyze`, formData, {
+    const res = await axios.post<WasteAnalysisResponse>(`${API_BASE}/waste-events/analyze`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return res.data;
