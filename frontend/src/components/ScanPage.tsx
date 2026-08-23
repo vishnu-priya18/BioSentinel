@@ -1,17 +1,19 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, AlertCircle, PackageCheck, Zap, Lock, Info } from 'lucide-react';
+import { Camera, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, AlertCircle, PackageCheck, Zap, Info, Upload, HelpCircle } from 'lucide-react';
 import { api } from '../services/api';
 import type { WasteAnalysisResponse, WastePassport } from '../types';
 
 export const ScanPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState<boolean>(false);
   const [analysisResult, setAnalysisResult] = useState<WasteAnalysisResponse | null>(null);
   const [registeredPassport, setRegisteredPassport] = useState<WastePassport | null>(null);
+  const [uploadedImagePreview, setUploadedImagePreview] = useState<string | null>(null);
 
   // Form Inputs for Evidence Fusion
   const [barcodeInput, setBarcodeInput] = useState<string>('');
@@ -49,6 +51,7 @@ export const ScanPage: React.FC = () => {
 
   const startCamera = async () => {
     setCameraError(null);
+    setUploadedImagePreview(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' }
@@ -60,7 +63,7 @@ export const ScanPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Camera access error:', err);
-      setCameraError('Unable to access camera. Please allow camera permissions in browser settings.');
+      setCameraError('Unable to access camera. Please allow camera permissions or upload an image file.');
     }
   };
 
@@ -89,6 +92,26 @@ export const ScanPage: React.FC = () => {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Image = canvas.toDataURL('image/jpeg', 0.85);
 
+    await sendAnalysisRequest(base64Image);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    stopCamera();
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      setUploadedImagePreview(base64);
+      await sendAnalysisRequest(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const sendAnalysisRequest = async (base64Image: string) => {
+    setAnalyzing(true);
+    setRegisteredPassport(null);
     try {
       const formData = new FormData();
       formData.append('image_base64', base64Image);
@@ -99,35 +122,11 @@ export const ScanPage: React.FC = () => {
 
       const data = await api.analyzeImage(formData);
       setAnalysisResult(data);
-
-      // Draw bounding box on canvas if present
-      if (data.object && data.object.bbox) {
-        drawBoundingBox(ctx, data.object);
-      }
-
     } catch (e) {
       console.error('Analysis request error', e);
     } finally {
       setAnalyzing(false);
     }
-  };
-
-  const drawBoundingBox = (ctx: CanvasRenderingContext2D, object: any) => {
-    const { bbox, class_name, confidence } = object;
-    if (bbox.width === 0 && bbox.height === 0) return;
-
-    // Draw box
-    ctx.strokeStyle = '#06b6d4'; // Cyan glow
-    ctx.lineWidth = 4;
-    ctx.strokeRect(bbox.x, bbox.y, bbox.width, bbox.height);
-
-    // Label banner
-    ctx.fillStyle = 'rgba(6, 182, 212, 0.9)';
-    ctx.fillRect(bbox.x, Math.max(0, bbox.y - 28), Math.max(160, bbox.width), 28);
-
-    ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 14px monospace';
-    ctx.fillText(`${class_name} ${Math.round(confidence * 100)}%`, bbox.x + 8, Math.max(18, bbox.y - 8));
   };
 
   const handleRegisterWaste = async () => {
@@ -166,7 +165,7 @@ export const ScanPage: React.FC = () => {
       case 'NEEDS_VERIFICATION':
         return { bg: 'bg-amber-500/15 border-amber-500/40 text-amber-400', icon: AlertCircle, text: '🟡 HUMAN VERIFICATION REQUIRED' };
       case 'UNKNOWN':
-        return { bg: 'bg-slate-800 border-slate-700 text-slate-300', icon: HelpCircleIcon, text: '⚪ CONTENT NOT OBSERVABLE' };
+        return { bg: 'bg-slate-800 border-slate-700 text-slate-300', icon: HelpCircle, text: '⚪ CONTENT NOT OBSERVABLE' };
       default:
         return { bg: 'bg-purple-500/10 border-purple-500/30 text-purple-400', icon: XCircle, text: 'SYSTEM ERROR' };
     }
@@ -175,7 +174,7 @@ export const ScanPage: React.FC = () => {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       
-      {/* Model Not Installed Warning Banner */}
+      {/* Model Status Warning Banner */}
       {modelStatus && !modelStatus.installed && (
         <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -198,7 +197,7 @@ export const ScanPage: React.FC = () => {
         </div>
       )}
 
-      {/* Main Grid: Left Camera Stream / Capture, Right Analysis & Explainability */}
+      {/* Main Grid: Left Camera View, Right AI Decision & Explainability */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left Column: Camera View (7 Cols) */}
@@ -213,27 +212,56 @@ export const ScanPage: React.FC = () => {
               <span className="text-xs font-mono text-slate-400">FPS: 30 • 1080p</span>
             </div>
 
-            {/* Video Viewport Container */}
+            {/* Hidden File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+
+            {/* Video / Preview Viewport Container */}
             <div className="relative aspect-video bg-slate-900 rounded-xl overflow-hidden border border-slate-800 flex items-center justify-center">
               
-              {!isCameraActive && (
+              {!isCameraActive && !uploadedImagePreview && (
                 <div className="text-center space-y-3 p-6">
                   <div className="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-slate-500">
-                    <Camera className="w-8 h-8" />
+                    <Camera className="w-8 h-8 text-cyan-400" />
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-300">Camera Feed Idle</p>
-                    <p className="text-xs text-slate-500">Allow camera access to scan biomedical waste</p>
+                    <p className="text-xs text-slate-500">Allow camera access or upload a photo to scan medical waste</p>
                   </div>
-                  <button
-                    onClick={startCamera}
-                    className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-bold text-xs text-slate-950 shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all"
-                  >
-                    OPEN CAMERA
-                  </button>
+                  <div className="flex items-center justify-center space-x-3 pt-2">
+                    <button
+                      onClick={startCamera}
+                      className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-bold text-xs text-slate-950 shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all flex items-center space-x-2"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>OPEN CAMERA</span>
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold text-xs text-slate-200 hover:bg-slate-700 transition-all flex items-center space-x-2"
+                    >
+                      <Upload className="w-4 h-4 text-cyan-400" />
+                      <span>UPLOAD IMAGE</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
+              {/* Uploaded Image Preview */}
+              {uploadedImagePreview && !isCameraActive && (
+                <img
+                  src={uploadedImagePreview}
+                  alt="Uploaded Waste Item"
+                  className="w-full h-full object-contain"
+                />
+              )}
+
+              {/* Live Webcam Stream */}
               <video
                 ref={videoRef}
                 playsInline
@@ -264,270 +292,266 @@ export const ScanPage: React.FC = () => {
               )}
             </div>
 
-            {/* Camera Actions & Controls */}
-            {isCameraActive && (
-              <div className="flex items-center justify-between gap-3 pt-2">
-                <button
-                  onClick={captureAndAnalyze}
-                  disabled={analyzing}
-                  className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 text-slate-950 font-extrabold text-sm shadow-xl shadow-cyan-500/25 hover:brightness-110 transition-all flex items-center justify-center space-x-2"
-                >
-                  {analyzing ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>RUNNING VISION INFERENCE...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4 fill-current" />
-                      <span>SCAN WASTE</span>
-                    </>
-                  )}
-                </button>
+            {/* Camera Controls */}
+            <div className="flex items-center justify-between gap-3 pt-2">
+              {isCameraActive ? (
+                <>
+                  <button
+                    onClick={captureAndAnalyze}
+                    disabled={analyzing}
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 text-slate-950 font-extrabold text-sm shadow-xl shadow-cyan-500/25 hover:brightness-110 transition-all flex items-center justify-center space-x-2"
+                  >
+                    {analyzing ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>RUNNING VISION INFERENCE...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 fill-current" />
+                        <span>SCAN WASTE</span>
+                      </>
+                    )}
+                  </button>
 
-                <button
-                  onClick={stopCamera}
-                  className="px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
-                >
-                  CLOSE CAMERA
-                </button>
-              </div>
-            )}
+                  <button
+                    onClick={stopCamera}
+                    className="px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-400 hover:text-white transition-colors"
+                  >
+                    CLOSE CAMERA
+                  </button>
+                </>
+              ) : (
+                <div className="flex items-center space-x-2 w-full justify-end">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition-colors flex items-center space-x-2"
+                  >
+                    <Upload className="w-4 h-4 text-cyan-400" />
+                    <span>Upload New Photo</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {cameraError && (
               <p className="text-xs text-red-400 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
                 {cameraError}
               </p>
             )}
-          </div>
 
-          {/* Optional Multi-Sensor Evidence Input Panel */}
-          <div className="glass-card rounded-2xl p-4 space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Multi-Sensor Context (Optional)</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            {/* Sensor Evidence Inputs */}
+            <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Department</label>
+                <label className="text-[11px] font-mono text-slate-400 block mb-1">DEPARTMENT ORIGIN</label>
                 <select
                   value={departmentInput}
                   onChange={(e) => setDepartmentInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
                 >
-                  <option value="ICU">ICU</option>
-                  <option value="SURGERY">Surgery</option>
-                  <option value="EMERGENCY">Emergency</option>
-                  <option value="ONCOLOGY">Oncology</option>
-                  <option value="LAB">Lab</option>
+                  <option value="ICU">ICU (Intensive Care)</option>
+                  <option value="SURGERY">Surgical Theater</option>
+                  <option value="ONCOLOGY">Oncology Ward</option>
+                  <option value="LAB">Diagnostic Lab</option>
+                  <option value="EMERGENCY">Emergency Ward</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Weight (kg)</label>
+                <label className="text-[11px] font-mono text-slate-400 block mb-1">LOAD CELL WEIGHT (KG)</label>
                 <input
                   type="number"
                   step="0.05"
                   value={weightInput}
                   onChange={(e) => setWeightInput(parseFloat(e.target.value) || 0.1)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1 font-medium">Barcode / QR</label>
+                <label className="text-[11px] font-mono text-slate-400 block mb-1">BARCODE / QR TAG (OPTIONAL)</label>
                 <input
                   type="text"
-                  placeholder="e.g. WHITE-01"
+                  placeholder="Scan bag barcode..."
                   value={barcodeInput}
                   onChange={(e) => setBarcodeInput(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-cyan-500 font-mono"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:border-cyan-400 focus:outline-none"
                 />
               </div>
+            </div>
 
-              <div className="flex items-center pt-5">
-                <label className="flex items-center space-x-2 cursor-pointer text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={isOpaqueBag}
-                    onChange={(e) => setIsOpaqueBag(e.target.checked)}
-                    className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
-                  />
-                  <span className="text-[11px] font-semibold">Opaque Container</span>
-                </label>
-              </div>
+            <div className="flex items-center space-x-2 pt-1">
+              <input
+                type="checkbox"
+                id="opaqueCheck"
+                checked={isOpaqueBag}
+                onChange={(e) => setIsOpaqueBag(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-400"
+              />
+              <label htmlFor="opaqueCheck" className="text-xs text-slate-300 select-none cursor-pointer">
+                Container contents are non-observable (Opaque Bag / Sealed Container)
+              </label>
             </div>
           </div>
         </div>
 
-        {/* Right Column: AI Analysis, Category, Hazard Gate & Decision (5 Cols) */}
+        {/* Right Column: AI Analysis Result, Category Stream, Safety Policy, Passports (5 Cols) */}
         <div className="lg:col-span-5 space-y-4">
           
-          {analysisResult ? (
-            <div className="space-y-4">
-              
-              {/* Primary Decision Banner */}
-              {(() => {
-                const badge = getDecisionBadge(analysisResult.decision.state);
-                const BadgeIcon = badge.icon;
-                return (
-                  <div className={`p-4 rounded-2xl border ${badge.bg} space-y-2`}>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-extrabold uppercase tracking-widest">OPERATIONAL DECISION</span>
-                      <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-slate-950/40 border border-current">
-                        {analysisResult.decision.state}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-center space-x-3">
-                      <BadgeIcon className="w-7 h-7 flex-shrink-0" />
-                      <h3 className="text-lg font-black tracking-tight">{badge.text}</h3>
-                    </div>
-
-                    <p className="text-xs leading-relaxed font-medium opacity-90">
-                      {analysisResult.decision.reason}
-                    </p>
-                  </div>
-                );
-              })()}
-
-              {/* Object & Bin Recommendation Card */}
-              <div className="glass-panel rounded-2xl p-5 space-y-4">
-                <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
-                  <div>
-                    <p className="text-[11px] uppercase font-bold tracking-wider text-slate-400">DETECTED OBJECT</p>
-                    <h3 className="text-xl font-black text-white tracking-wide mt-0.5">
-                      {analysisResult.object.class_name.replace('_', ' ')}
-                    </h3>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[11px] uppercase font-bold tracking-wider text-slate-400">CONFIDENCE</p>
-                    <p className="text-lg font-mono font-bold text-cyan-400">
-                      {Math.round(analysisResult.object.confidence * 100)}%
-                    </p>
-                  </div>
-                </div>
-
-                {/* Recommended Bin */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase font-bold tracking-wider text-slate-400">RECOMMENDED BIN</p>
-                    <div className={`inline-flex items-center space-x-2 px-3 py-1.5 rounded-xl border text-xs font-black tracking-wider shadow-md ${getBinBadgeClass(analysisResult.category.bin_color)}`}>
-                      <div className="w-3 h-3 rounded-full border border-current bg-current" />
-                      <span>{analysisResult.category.bin_color} BIN</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase font-bold tracking-wider text-slate-400">HAZARD LEVEL</p>
-                    <div className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold ${
-                      analysisResult.hazard.severity === 'CRITICAL'
-                        ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                        : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                    }`}>
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>{analysisResult.hazard.severity}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Category Stream Name */}
-                <div className="bg-slate-900/60 p-3 rounded-xl border border-slate-800 text-xs space-y-1">
-                  <span className="text-slate-400 font-medium">Biomedical Stream:</span>
-                  <p className="font-bold text-slate-200">{analysisResult.category.name}</p>
-                </div>
-              </div>
-
-              {/* Explainable AI: WHY THIS DECISION? */}
-              <div className="glass-card rounded-2xl p-4 space-y-3">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-cyan-400 flex items-center space-x-1.5">
-                  <Info className="w-4 h-4" />
-                  <span>WHY THIS DECISION?</span>
-                </h4>
-                <div className="space-y-2">
-                  {analysisResult.decision.why_checklist.map((item, idx) => (
-                    <div key={idx} className="flex items-start space-x-2 text-xs">
-                      {item.status === 'PASS' ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                      )}
-                      <div>
-                        <p className="font-semibold text-slate-200">{item.label}</p>
-                        <p className="text-[11px] text-slate-400">{item.details}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Counterfactual: WHAT WOULD MAKE THIS SAFE? */}
-              {analysisResult.decision.what_safe_checklist.length > 0 && (
-                <div className="glass-card rounded-2xl p-4 space-y-3 border-amber-500/20">
-                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-amber-400 flex items-center space-x-1.5">
-                    <Lock className="w-4 h-4" />
-                    <span>WHAT WOULD MAKE THIS SAFE?</span>
-                  </h4>
-                  <ul className="space-y-1.5 text-xs text-slate-300">
-                    {analysisResult.decision.what_safe_checklist.map((step, idx) => (
-                      <li key={idx} className="flex items-start space-x-2">
-                        <span className="text-amber-400 font-bold">•</span>
-                        <span>{step}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Waste Registration CTA */}
-              {!registeredPassport ? (
-                <button
-                  onClick={handleRegisterWaste}
-                  className="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 text-slate-950 font-black text-xs tracking-wider uppercase shadow-lg shadow-emerald-500/20 hover:brightness-110 transition-all flex items-center justify-center space-x-2"
-                >
-                  <PackageCheck className="w-4 h-4" />
-                  <span>REGISTER WASTE & GENERATE QR PASSPORT</span>
-                </button>
-              ) : (
-                <div className="glass-panel p-4 rounded-2xl border-emerald-500/40 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-emerald-400 font-bold">
-                    <span>✓ DIGITAL WASTE PASSPORT CREATED</span>
-                    <span className="font-mono">{registeredPassport.waste_id}</span>
-                  </div>
-                  <div className="flex items-center space-x-4 bg-slate-900 p-3 rounded-xl border border-slate-800">
-                    {registeredPassport.qr_code_base64 && (
-                      <img src={registeredPassport.qr_code_base64} alt="QR Code" className="w-20 h-20 rounded bg-white p-1" />
-                    )}
-                    <div className="text-xs space-y-1">
-                      <p className="font-mono font-bold text-white">{registeredPassport.passport_id}</p>
-                      <p className="text-slate-400">Stream: <span className="text-cyan-400 font-bold">{registeredPassport.category}</span></p>
-                      <p className="text-slate-400">Ward: <span className="text-slate-200">{registeredPassport.department}</span></p>
-                      <span className="inline-block px-2 py-0.5 bg-cyan-500/10 text-cyan-400 rounded text-[10px] font-mono">
-                        {registeredPassport.current_status}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          ) : (
+          {analyzing && (
             <div className="glass-panel rounded-2xl p-8 text-center space-y-4">
-              <div className="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mx-auto text-slate-500">
-                <ShieldCheck className="w-8 h-8 text-cyan-500/50" />
-              </div>
+              <RefreshCw className="w-8 h-8 text-cyan-400 animate-spin mx-auto" />
               <div className="space-y-1">
-                <h3 className="text-sm font-bold text-slate-300">AWAITING CAMERA INFERENCE</h3>
-                <p className="text-xs text-slate-500">
-                  Open camera feed and click "SCAN WASTE" to run real computer vision detection.
+                <h3 className="text-sm font-bold text-slate-200">Executing Perception Pipeline</h3>
+                <p className="text-xs text-slate-400">Quality Check → Object Detection → Stream Mapper → Hazard Gate → Policy</p>
+              </div>
+            </div>
+          )}
+
+          {!analysisResult && !analyzing && (
+            <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
+              <ShieldCheck className="w-10 h-10 text-slate-600 mx-auto" />
+              <div>
+                <h3 className="text-sm font-bold text-slate-300">Awaiting Waste Scan</h3>
+                <p className="text-xs text-slate-500 max-w-xs mx-auto">
+                  Click <strong className="text-cyan-400">OPEN CAMERA</strong> or <strong className="text-cyan-400">UPLOAD IMAGE</strong> to analyze medical waste.
                 </p>
               </div>
             </div>
           )}
 
+          {analysisResult && !analyzing && (
+            <div className="space-y-4">
+              
+              {/* Decision Badge Header */}
+              {(() => {
+                const badge = getDecisionBadge(analysisResult.decision.state);
+                const IconComp = badge.icon;
+                return (
+                  <div className={`p-4 rounded-2xl border ${badge.bg} flex items-center justify-between`}>
+                    <div className="flex items-center space-x-3">
+                      <IconComp className="w-6 h-6 flex-shrink-0" />
+                      <div>
+                        <h4 className="text-xs font-mono font-bold tracking-wider">OPERATIONAL DECISION</h4>
+                        <p className="text-sm font-extrabold">{badge.text}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-1 bg-slate-900/60 rounded border border-slate-700/50">
+                      {analysisResult.decision.automation_allowed ? 'AUTOPILOT ON' : 'HUMAN REQUIRED'}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* Analysis Result Card */}
+              <div className="glass-panel rounded-2xl p-5 space-y-4">
+                
+                {/* Detected Object */}
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 block">DETECTED OBJECT</span>
+                    <h3 className="text-lg font-black text-cyan-300 uppercase tracking-wide">
+                      {analysisResult.object.class_name.replace(/_/g, ' ')}
+                    </h3>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-mono text-slate-400 block">AI CONFIDENCE</span>
+                    <span className="text-base font-extrabold font-mono text-cyan-400">
+                      {Math.round(analysisResult.object.confidence * 100)}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Waste Category Stream */}
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 block">BIOMEDICAL STREAM</span>
+                    <span className="text-xs font-bold text-slate-200">
+                      {analysisResult.category.name}
+                    </span>
+                  </div>
+                  <span className={`px-4 py-1.5 rounded-xl text-xs font-black border shadow-lg ${getBinBadgeClass(analysisResult.category.code)}`}>
+                    {analysisResult.category.code} BIN
+                  </span>
+                </div>
+
+                {/* Hazard Gate Evaluation */}
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <div>
+                    <span className="text-[10px] font-mono text-slate-400 block">HAZARD GATE</span>
+                    <span className={`text-xs font-bold ${analysisResult.hazard.is_sharp ? 'text-red-400' : 'text-slate-300'}`}>
+                      {analysisResult.hazard.severity} HAZARD {analysisResult.hazard.is_sharp ? '(CRITICAL SHARP)' : ''}
+                    </span>
+                  </div>
+                  <span className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold ${analysisResult.hazard.is_sharp ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'}`}>
+                    {analysisResult.hazard.is_sharp ? 'SHARP DETECTED' : 'NON-SHARP'}
+                  </span>
+                </div>
+
+                {/* Explanation Reason */}
+                <div className="bg-slate-900/80 p-3 rounded-xl border border-slate-800 space-y-1">
+                  <span className="text-[10px] font-mono text-cyan-400 block flex items-center space-x-1">
+                    <Info className="w-3 h-3" />
+                    <span>EXPLANATION REASON</span>
+                  </span>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    {analysisResult.decision.reason}
+                  </p>
+                </div>
+
+                {/* Register Waste Button */}
+                <button
+                  onClick={handleRegisterWaste}
+                  disabled={!!registeredPassport}
+                  className={`w-full py-3 rounded-xl font-bold text-xs flex items-center justify-center space-x-2 transition-all ${
+                    registeredPassport
+                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                      : 'bg-cyan-400 text-slate-950 hover:bg-cyan-300 shadow-lg shadow-cyan-400/20'
+                  }`}
+                >
+                  <PackageCheck className="w-4 h-4" />
+                  <span>{registeredPassport ? 'REGISTERED IN SYSTEM' : 'REGISTER WASTE BAG & GENERATE QR PASSPORT'}</span>
+                </button>
+
+              </div>
+
+              {/* QR Waste Passport Card if Registered */}
+              {registeredPassport && (
+                <div className="glass-panel rounded-2xl p-5 border border-emerald-500/30 bg-emerald-500/5 space-y-3 animate-fadeIn">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <PackageCheck className="w-5 h-5 text-emerald-400" />
+                      <h4 className="text-xs font-bold text-emerald-300">DIGITAL WASTE PASSPORT GENERATED</h4>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded">
+                      {registeredPassport.passport_id}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center space-x-4 pt-2">
+                    <img
+                      src={registeredPassport.qr_code_base64}
+                      alt="QR Code"
+                      className="w-20 h-20 rounded-lg border border-slate-700 bg-white p-1"
+                    />
+                    <div className="space-y-1 text-xs text-slate-300">
+                      <p><strong className="text-slate-400">Waste ID:</strong> {registeredPassport.waste_id}</p>
+                      <p><strong className="text-slate-400">Category:</strong> {registeredPassport.category}</p>
+                      <p><strong className="text-slate-400">Department:</strong> {registeredPassport.department}</p>
+                      <p><strong className="text-slate-400">Weight:</strong> {registeredPassport.weight} kg</p>
+                      <p><strong className="text-slate-400">Status:</strong> {registeredPassport.current_status}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+            </div>
+          )}
+
         </div>
+
       </div>
+
     </div>
   );
 };
-
-function HelpCircleIcon(props: any) {
-  return <Info {...props} />;
-}
