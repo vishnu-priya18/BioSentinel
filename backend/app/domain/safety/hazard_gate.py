@@ -17,7 +17,7 @@ class SafetyPolicyEngine:
 
     CRITICAL_SHARPS = {
         "syringe", "needle", "lancet", "scalpel", "blade", "sharp_medical_instrument",
-        "broken_glass_medical_item", "sharp_unknown"
+        "broken_glass_medical_item", "sharp_unknown", "knife", "scissors", "pen"
     }
 
     INFECTIOUS_OBJECTS = {
@@ -28,12 +28,12 @@ class SafetyPolicyEngine:
 
     CONTAMINATED_PLASTICS = {
         "iv_tube", "iv_set", "catheter", "gloves", "glove", "plastic_container",
-        "disposable_plastic_medical_item", "urine_bag", "tubing"
+        "disposable_plastic_medical_item", "urine_bag", "tubing", "cup"
     }
 
     GLASS_OBJECTS = {
         "glass_vial", "medicine_vial", "vial", "medicine_bottle", "broken_glass",
-        "glass_ampoule"
+        "glass_ampoule", "bottle"
     }
 
     def evaluate_hazard(self, object_name: str) -> Dict[str, Any]:

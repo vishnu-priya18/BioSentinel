@@ -103,7 +103,7 @@ def train_high_accuracy_model():
     
     results = model.train(
         data=data_yaml,
-        epochs=15,
+        epochs=3,
         imgsz=640,
         batch=16,
         project=output_dir,

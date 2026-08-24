@@ -16,7 +16,7 @@ from backend.app.schemas.schemas import (
 )
 from backend.app.services.waste_service import WasteService
 from backend.app.services.storage_service import StorageService
-from backend.ml.inference.detector import BiomedicalWasteDetector
+from backend.app.domain.intelligence.yolo_detector import CanonicalYoloWasteDetector
 from backend.app.domain.compliance.waste_stream_mapper import WasteStreamMapper
 from backend.app.domain.hardware.hardware_adapters import HardwareAdapterManager
 from backend.app.domain.collection.rover_service import RoverService
@@ -28,12 +28,52 @@ from backend.app.config import settings
 
 router = APIRouter()
 waste_service = WasteService()
-real_detector = BiomedicalWasteDetector()
+canonical_detector = CanonicalYoloWasteDetector()
+real_detector = canonical_detector
 storage_service = StorageService()
 stream_mapper = WasteStreamMapper()
 hardware_manager = HardwareAdapterManager()
 rover_service = RoverService()
 audit_service = AuditChainService()
+
+@router.get("/health")
+def get_health():
+    db_connected = False
+    try:
+        with engine.connect() as conn:
+            db_connected = True
+    except Exception:
+        db_connected = False
+
+    status_info = canonical_detector.get_status()
+    return {
+        "backend": "OK",
+        "database": "OK" if db_connected else "UNAVAILABLE",
+        "vision_model": status_info["status"],
+        "model_path": status_info["model_path"],
+        "model_classes": status_info["classes"],
+        "version": "2.0.0-PROTOTYPE"
+    }
+
+@router.get("/vision/status")
+def get_vision_status():
+    return canonical_detector.get_status()
+
+@router.post("/vision/test")
+async def vision_test(file: UploadFile = File(...)):
+    img_bytes = await file.read()
+    try:
+        pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid image file format")
+
+    result = canonical_detector.detect(pil_img)
+    return {
+        "model_status": result["model_status"],
+        "inference_ms": result["inference_ms"],
+        "image_dimensions": result.get("image_dimensions", {}),
+        "detections": result["detections"]
+    }
 
 @router.get("/system/health")
 def get_system_health():
@@ -73,13 +113,15 @@ def get_system_health():
 
 @router.get("/system/model-status")
 def get_model_status():
-    is_ready = real_detector.is_ready()
+    status_info = canonical_detector.get_status()
     return {
-        "installed": is_ready,
-        "status": "READY" if is_ready else "MODEL NOT AVAILABLE",
+        "installed": status_info["status"] == "READY",
+        "status": status_info["status"],
         "architecture": "YOLOv8 Object Detector",
         "filename": settings.ML_MODEL_FILE,
-        "vocabulary_size": len(real_detector.VOCABULARY)
+        "vocabulary_size": status_info["class_count"],
+        "classes": status_info["classes"],
+        "device": status_info["device"]
     }
 
 @router.get("/system/training-metrics")

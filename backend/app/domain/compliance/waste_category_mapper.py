@@ -18,6 +18,9 @@ class DeterministicWasteCategoryMapper:
         "lancet": "WHITE",
         "scalpel": "WHITE",
         "blade": "WHITE",
+        "knife": "WHITE",
+        "scissors": "WHITE",
+        "pen": "WHITE",
         "sharp_medical_instrument": "WHITE",
         "SHARP_UNKNOWN": "WHITE",
 
@@ -49,6 +52,10 @@ class DeterministicWasteCategoryMapper:
         "broken_glass_medical_item": "BLUE",
         "glass_ampoule": "BLUE",
         "vial": "BLUE",
+        "bottle": "BLUE",
+
+        # RED STREAM
+        "cup": "RED",
 
         # BLACK STREAM (General Municipal)
         "medicine_packaging": "BLACK",

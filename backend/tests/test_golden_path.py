@@ -155,5 +155,20 @@ def test_passport_persistence_and_collection_update(db_session):
     updated_passport = db_session.query(WastePassport).filter(WastePassport.waste_id == passport.waste_id).first()
     assert updated_passport.current_status == "COLLECTED"
 
+def test_canonical_yolo_detector_status():
+    """
+    TEST 7: CANONICAL DETECTOR STATUS
+    Asserts CanonicalYoloWasteDetector returns structured status and class vocabulary.
+    """
+    from backend.app.domain.intelligence.yolo_detector import CanonicalYoloWasteDetector
+    detector = CanonicalYoloWasteDetector()
+    status_info = detector.get_status()
+
+    assert "status" in status_info
+    assert "model_path" in status_info
+    assert "device" in status_info
+    assert "confidence_threshold" in status_info
+    assert status_info["confidence_threshold"] == 0.40
+
 if __name__ == "__main__":
     pytest.main(["-v", __file__])
