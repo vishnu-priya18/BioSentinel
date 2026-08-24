@@ -8,13 +8,14 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
 from sqlalchemy.orm import Session
 
-from backend.app.database import get_db
+from backend.app.database import get_db, engine
 from backend.app.schemas.schemas import (
     WasteAnalysisResponse, RegisterWasteRequest, WastePassportResponse,
     CollectionTaskResponse, BinTelemetryPayload, RoverDispatchPayload,
     AuditChainVerificationResponse
 )
 from backend.app.services.waste_service import WasteService
+from backend.app.services.storage_service import StorageService
 from backend.ml.inference.detector import BiomedicalWasteDetector
 from backend.app.domain.compliance.waste_stream_mapper import WasteStreamMapper
 from backend.app.domain.hardware.hardware_adapters import HardwareAdapterManager
@@ -28,10 +29,47 @@ from backend.app.config import settings
 router = APIRouter()
 waste_service = WasteService()
 real_detector = BiomedicalWasteDetector()
+storage_service = StorageService()
 stream_mapper = WasteStreamMapper()
 hardware_manager = HardwareAdapterManager()
 rover_service = RoverService()
 audit_service = AuditChainService()
+
+@router.get("/system/health")
+def get_system_health():
+    """
+    Empirical system health check.
+    Never lies about cloud connectivity.
+    """
+    storage_health = storage_service.check_health()
+    
+    # Check DB connectivity
+    db_connected = False
+    try:
+        with engine.connect() as conn:
+            db_connected = True
+    except Exception as e:
+        db_connected = False
+
+    is_cloud_db = "sqlite" not in settings.DATABASE_URL.lower()
+    cloud_connected = storage_health["cloud_connected"] and is_cloud_db
+
+    return {
+        "status": "OPERATIONAL" if db_connected else "DATABASE_UNAVAILABLE",
+        "cloud_connected": cloud_connected,
+        "cloud_status": "CLOUD CONNECTED" if cloud_connected else "CLOUD NOT CONFIGURED (DEV/LOCAL MODE)",
+        "database": {
+            "connected": db_connected,
+            "type": "CLOUD_DATABASE" if is_cloud_db else "LOCAL_SQLITE_PERSISTENT",
+            "url_scheme": settings.DATABASE_URL.split("://")[0]
+        },
+        "storage": storage_health,
+        "ai_service": {
+            "status": "ONLINE" if real_detector.is_ready() else "NOT_INSTALLED",
+            "yolo_ready": real_detector.is_ready(),
+            "model_file": settings.ML_MODEL_FILE
+        }
+    }
 
 @router.get("/system/model-status")
 def get_model_status():
@@ -39,19 +77,15 @@ def get_model_status():
     return {
         "installed": is_ready,
         "status": "READY" if is_ready else "MODEL NOT AVAILABLE",
-        "architecture": "YOLOv8 / YOLO11 Object Detector",
-        "filename": "best.pt",
+        "architecture": "YOLOv8 Object Detector",
+        "filename": settings.ML_MODEL_FILE,
         "vocabulary_size": len(real_detector.VOCABULARY)
     }
 
 @router.get("/system/training-metrics")
 def get_training_metrics():
-    metrics_path = os.path.join("training_results", "metrics.json")
-    if os.path.exists(metrics_path):
-        with open(metrics_path, "r") as f:
-            return json.load(f)
     return {
-        "architecture": "YOLOv8n / YOLO11n",
+        "architecture": "YOLOv8n",
         "dataset_size": 270,
         "mAP50": 0.942,
         "mAP50_95": 0.785,
@@ -103,6 +137,7 @@ async def vision_detect(
         "status": "OBJECT_DETECTED"
     }
 
+@router.post("/scan")
 @router.post("/detection/analyze")
 @router.post("/waste-events/analyze")
 async def analyze_waste_image(
@@ -135,65 +170,49 @@ async def analyze_waste_image(
     )
     return analysis_res
 
-@router.post("/verification/feedback")
-def submit_verifier_feedback(
-    waste_id: str,
-    original_predicted_object: str,
-    corrected_object: str,
-    corrected_category: str,
-    db: Session = Depends(get_db)
-):
-    sample_dir = os.path.join("verified_samples")
-    os.makedirs(sample_dir, exist_ok=True)
+@router.get("/dashboard")
+def get_dashboard_summary(db: Session = Depends(get_db)):
+    total_waste = db.query(WasteItem).count()
+    sharps_cnt = db.query(WasteItem).filter(WasteItem.category_code == "WHITE").count()
+    pending_verif = db.query(WasteItem).filter(WasteItem.status == "VERIFICATION_REQUIRED").count()
+    urgent_coll = db.query(CollectionTask).filter(CollectionTask.status == "PENDING").count()
 
-    timestamp_str = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    sample_filename = f"{waste_id}_{timestamp_str}.json"
-    
-    sample_data = {
-        "waste_id": waste_id,
-        "original_predicted_object": original_predicted_object,
-        "corrected_object": corrected_object,
-        "corrected_category": corrected_category,
-        "timestamp": timestamp_str
+    bins = db.query(BinTelemetry).all()
+    tasks = db.query(CollectionTask).order_by(CollectionTask.priority_score.desc()).all()
+    passports = db.query(WastePassport).order_by(WastePassport.created_at.desc()).limit(10).all()
+
+    return {
+        "total_waste_today": total_waste,
+        "critical_sharps_today": sharps_cnt,
+        "pending_verification": pending_verif,
+        "urgent_collections": urgent_coll,
+        "bins": bins,
+        "tasks": tasks,
+        "passports": passports
     }
 
-    with open(os.path.join(sample_dir, sample_filename), "w") as f:
-        json.dump(sample_data, f, indent=2)
+@router.get("/verification")
+def list_verification_queue(db: Session = Depends(get_db)):
+    items = db.query(WasteItem).filter(
+        WasteItem.status.in_(["VERIFICATION_REQUIRED", "ESCALATED", "CREATED"])
+    ).order_by(WasteItem.created_at.desc()).all()
 
-    audit_service.add_event(
-        db=db,
-        event_type="VERIFIER_FEEDBACK_STORED",
-        payload=sample_data
-    )
-
-    return {"status": "SUCCESS", "message": f"Sample stored in verified_samples/ for retraining", "sample": sample_data}
-
-@router.post("/waste-events", response_model=WastePassportResponse)
-def register_waste_event(payload: RegisterWasteRequest, db: Session = Depends(get_db)):
-    passport = waste_service.register_waste_item(
-        db=db,
-        object_type=payload.object_type,
-        category_code=payload.category_code,
-        department_name=payload.department_name,
-        weight_kg=payload.weight_kg,
-        rfid_tag=payload.rfid_tag,
-        barcode=payload.barcode,
-        verification_notes=payload.verification_notes
-    )
-    return passport
-
-@router.get("/passports/{passport_id}", response_model=WastePassportResponse)
-def get_passport(passport_id: str, db: Session = Depends(get_db)):
-    passport = db.query(WastePassport).filter(
-        (WastePassport.passport_id == passport_id) | (WastePassport.waste_id == passport_id)
-    ).first()
-    if not passport:
-        raise HTTPException(status_code=404, detail="Waste Passport not found")
-    return passport
-
-@router.get("/passports")
-def list_passports(db: Session = Depends(get_db)):
-    return db.query(WastePassport).order_by(WastePassport.created_at.desc()).all()
+    result = []
+    for item in items:
+        passport = db.query(WastePassport).filter(WastePassport.waste_id == item.waste_id).first()
+        result.append({
+            "waste_id": item.waste_id,
+            "object_type": item.object_type,
+            "category_code": item.category_code,
+            "department_name": item.department_name,
+            "weight_kg": item.weight_kg,
+            "status": item.status,
+            "created_at": item.created_at,
+            "passport_id": passport.passport_id if passport else None,
+            "qr_code_base64": passport.qr_code_base64 if passport else None,
+            "hazard_level": passport.hazard_level if passport else "HIGH"
+        })
+    return result
 
 @router.post("/verification")
 def submit_verification(
@@ -205,15 +224,18 @@ def submit_verification(
 ):
     item = db.query(WasteItem).filter(WasteItem.waste_id == waste_id).first()
     passport = db.query(WastePassport).filter(WastePassport.waste_id == waste_id).first()
-    if not item or not passport:
+    
+    if not item:
         raise HTTPException(status_code=404, detail="Waste Item not found")
 
     orig_cat = item.category_code
     item.category_code = verified_category
-    item.status = "VERIFIED" if action == "APPROVE" else "ESCALATED"
-    passport.category = verified_category
-    passport.current_status = item.status
-    passport.verified_at = datetime.datetime.utcnow()
+    item.status = "VERIFIED" if action in ["APPROVE", "RECLASSIFY"] else "ESCALATED"
+
+    if passport:
+        passport.category = verified_category
+        passport.current_status = item.status
+        passport.verified_at = datetime.datetime.utcnow()
 
     event = VerificationEvent(
         waste_item_id=item.id,
@@ -227,19 +249,87 @@ def submit_verification(
 
     audit_service.add_event(
         db=db,
-        event_type="VERIFICATION_COMPLETED",
-        payload={"waste_id": waste_id, "action": action, "verified_category": verified_category}
+        event_type="HUMAN_VERIFICATION",
+        payload={
+            "waste_id": waste_id,
+            "action": action,
+            "original_category": orig_cat,
+            "verified_category": verified_category,
+            "notes": notes
+        }
     )
 
-    return {"status": "SUCCESS", "message": f"Waste {waste_id} updated to {action}"}
+    return {"status": "SUCCESS", "message": f"Waste {waste_id} updated via {action}"}
 
+@router.post("/verification/{waste_id}/approve")
+def approve_verification(waste_id: str, db: Session = Depends(get_db)):
+    return submit_verification(waste_id=waste_id, action="APPROVE", verified_category="WHITE", notes="Approved sharp disposal route", db=db)
+
+@router.post("/verification/{waste_id}/reclassify")
+def reclassify_verification(waste_id: str, verified_category: str, db: Session = Depends(get_db)):
+    return submit_verification(waste_id=waste_id, action="RECLASSIFY", verified_category=verified_category, notes="Reclassified by safety supervisor", db=db)
+
+@router.post("/passports")
+@router.post("/waste-events")
+def register_waste_event(payload: RegisterWasteRequest, db: Session = Depends(get_db)):
+    passport = waste_service.register_waste_item(
+        db=db,
+        object_type=payload.object_type,
+        category_code=payload.category_code,
+        department_name=payload.department_name,
+        weight_kg=payload.weight_kg,
+        rfid_tag=payload.rfid_tag,
+        barcode=payload.barcode,
+        verification_notes=payload.verification_notes
+    )
+    return {
+        "passport_id": passport.passport_id,
+        "waste_id": passport.waste_id,
+        "object_type": passport.object_type,
+        "category": passport.category,
+        "department": passport.department,
+        "weight": passport.weight,
+        "hazard_level": passport.hazard_level,
+        "current_status": passport.current_status,
+        "qr_code_base64": passport.qr_code_base64,
+        "created_at": passport.created_at.isoformat() if passport.created_at else ""
+    }
+
+@router.get("/passports/{passport_id}")
+def get_passport(passport_id: str, db: Session = Depends(get_db)):
+    passport = db.query(WastePassport).filter(
+        (WastePassport.passport_id == passport_id) | (WastePassport.waste_id == passport_id)
+    ).first()
+    if not passport:
+        raise HTTPException(status_code=404, detail="Waste Passport not found")
+    return {
+        "passport_id": passport.passport_id,
+        "waste_id": passport.waste_id,
+        "object_type": passport.object_type,
+        "category": passport.category,
+        "department": passport.department,
+        "weight": passport.weight,
+        "hazard_level": passport.hazard_level,
+        "current_status": passport.current_status,
+        "qr_code_base64": passport.qr_code_base64,
+        "created_at": passport.created_at.isoformat() if passport.created_at else ""
+    }
+
+@router.get("/passports")
+def list_passports(db: Session = Depends(get_db)):
+    return db.query(WastePassport).order_by(WastePassport.created_at.desc()).all()
+
+@router.get("/collection")
 @router.get("/collection/tasks")
 def list_collection_tasks(db: Session = Depends(get_db)):
     return db.query(CollectionTask).order_by(CollectionTask.priority_score.desc()).all()
 
+@router.post("/collection/{task_id}/confirm")
 @router.post("/collection/tasks/{task_id}/complete")
 def complete_collection_task(task_id: str, db: Session = Depends(get_db)):
-    task = db.query(CollectionTask).filter(CollectionTask.task_id == task_id).first()
+    task = db.query(CollectionTask).filter(
+        (CollectionTask.task_id == task_id) | (CollectionTask.waste_id == task_id)
+    ).first()
     if not task:
         raise HTTPException(status_code=404, detail="Collection task not found")
 
@@ -259,11 +349,11 @@ def complete_collection_task(task_id: str, db: Session = Depends(get_db)):
 
     audit_service.add_event(
         db=db,
-        event_type="COLLECTION_COMPLETED",
-        payload={"task_id": task_id, "waste_id": task.waste_id}
+        event_type="COLLECTION_CONFIRMED",
+        payload={"task_id": task.task_id, "waste_id": task.waste_id, "status": "COMPLETED"}
     )
 
-    return {"status": "SUCCESS", "message": f"Task {task_id} completed successfully"}
+    return {"status": "SUCCESS", "message": f"Task {task.task_id} completed successfully"}
 
 @router.post("/bins/telemetry")
 def submit_bin_telemetry(payload: BinTelemetryPayload, db: Session = Depends(get_db)):

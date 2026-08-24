@@ -7,24 +7,26 @@ from sqlalchemy.orm import Session
 
 from backend.app.domain.intelligence.classifier_adapter import ClassifierAdapter
 from backend.app.domain.compliance.waste_category_mapper import DeterministicWasteCategoryMapper
-from backend.app.domain.safety.hazard_gate import HazardGate
+from backend.app.domain.safety.hazard_gate import SafetyPolicyEngine
 from backend.app.domain.evidence.evidence_fusion_engine import EvidenceFusionEngine
 from backend.app.domain.decision.policy_engine import PolicyEngine
 from backend.app.domain.decision.reasoning_panel_engine import ReasoningPanelEngine
 from backend.app.domain.decision.counterfactual_engine import CounterfactualEngine
 from backend.app.domain.audit.audit_chain_service import AuditChainService
+from backend.app.services.storage_service import StorageService
 from backend.app.models.models import WasteItem, WastePassport, CollectionTask, Alert
 
 class WasteService:
     def __init__(self):
         self.classifier_adapter = ClassifierAdapter()
         self.category_mapper = DeterministicWasteCategoryMapper()
-        self.hazard_gate = HazardGate()
+        self.safety_engine = SafetyPolicyEngine()
         self.evidence_engine = EvidenceFusionEngine()
         self.policy_engine = PolicyEngine()
         self.reasoning_engine = ReasoningPanelEngine()
         self.counterfactual_engine = CounterfactualEngine()
         self.audit_service = AuditChainService()
+        self.storage_service = StorageService()
 
     def process_image_bytes(
         self,
@@ -35,18 +37,26 @@ class WasteService:
         department: str = "ICU",
         is_opaque_bag: bool = False
     ):
-        # 1. Load image
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # 1. Save image to object storage (Cloud or Local fallback)
+        image_url, storage_key = self.storage_service.save_image(image_bytes, filename_prefix="scan")
+        storage_health = self.storage_service.check_health()
 
-        # 2. Vision analysis (returns all detected objects)
+        # 2. Load PIL image with robust fallback
+        try:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        except Exception:
+            # Fallback for SVG or synthetic canvas data
+            image = Image.new("RGB", (640, 480), color=(15, 23, 42))
+
+        # 3. Vision analysis (returns all detected objects)
         cv_result = self.classifier_adapter.analyze_frame(image)
         model_installed = cv_result["model_installed"]
         all_detections = cv_result.get("all_detections", [cv_result["object"]])
 
-        # 3. Multi-object prioritization: Critical Sharp > Biohazard > Plastic > Glass
+        # 4. Multi-object prioritization: Critical Sharp > Biohazard > Plastic > Glass
         primary = all_detections[0]
         for det in all_detections:
-            hazard_eval = self.hazard_gate.evaluate_hazard(det["class_name"])
+            hazard_eval = self.safety_engine.evaluate_hazard(det["class_name"])
             if hazard_eval.get("is_sharp", False):
                 primary = det
                 break
@@ -54,13 +64,13 @@ class WasteService:
         object_name = primary["class_name"].lower()
         confidence = primary["confidence"]
 
-        # 4. Deterministic Waste Category Stream
+        # 5. Deterministic Waste Category Stream
         category = self.category_mapper.get_category_for_object(object_name)
 
-        # 5. Hazard Safety Gate
-        hazard_info = self.hazard_gate.evaluate_hazard(object_name)
+        # 6. Safety Policy Engine Hazard Gate
+        hazard_info = self.safety_engine.evaluate_hazard(object_name)
 
-        # 6. Evidence Fusion
+        # 7. Evidence Fusion
         evidence_info = self.evidence_engine.fuse_evidence(
             vision_category=category["code"],
             vision_confidence=confidence,
@@ -70,7 +80,7 @@ class WasteService:
             department=department
         )
 
-        # 7. Deterministic Policy Decision
+        # 8. Deterministic Policy Decision
         decision_info = self.policy_engine.evaluate_decision(
             object_name=object_name,
             confidence=confidence,
@@ -80,7 +90,7 @@ class WasteService:
             model_installed=model_installed
         )
 
-        # 8. Reasoning Checklist
+        # 9. Reasoning Checklist
         why_checklist = self.reasoning_engine.build_why_checklist(
             object_name=object_name,
             confidence=confidence,
@@ -90,7 +100,7 @@ class WasteService:
             evidence_info=evidence_info
         )
 
-        # 9. Counterfactual Guidance
+        # 10. Counterfactual Guidance
         what_safe_checklist = self.counterfactual_engine.build_counterfactual_recommendations(
             object_name=object_name,
             confidence=confidence,
@@ -109,12 +119,15 @@ class WasteService:
                 "category": category["code"],
                 "hazard": hazard_info["severity"],
                 "decision": decision_info["state"],
+                "image_url": image_url,
                 "all_detections": [d["class_name"] for d in all_detections]
             }
         )
 
         return {
             "model_installed": model_installed,
+            "image_url": image_url,
+            "storage_status": storage_health,
             "object": primary,
             "all_detections": all_detections,
             "category": category,
@@ -122,6 +135,7 @@ class WasteService:
             "decision": {
                 "state": decision_info["state"],
                 "automation_allowed": decision_info["automation_allowed"],
+                "decision_code": decision_info.get("decision", "HUMAN_VERIFICATION_REQUIRED"),
                 "reason": decision_info["reason"],
                 "why_checklist": why_checklist,
                 "what_safe_checklist": what_safe_checklist
@@ -144,7 +158,11 @@ class WasteService:
         count = db.query(WasteItem).count() + 1
         waste_id = f"MW-2026-{count:06d}"
 
-        status = "AWAITING_COLLECTION" if category_code != "UNKNOWN" else "VERIFICATION_REQUIRED"
+        # Status rules
+        if category_code in ["WHITE", "YELLOW", "UNKNOWN"]:
+            status = "VERIFICATION_REQUIRED"
+        else:
+            status = "AWAITING_COLLECTION"
 
         waste_item = WasteItem(
             waste_id=waste_id,
@@ -172,11 +190,44 @@ class WasteService:
             category=category_code,
             department=department_name,
             weight=weight_kg,
-            hazard_level="CRITICAL" if category_code == "WHITE" else "HIGH",
+            hazard_level="CRITICAL" if category_code == "WHITE" else ("HIGH" if category_code == "YELLOW" else "MODERATE"),
             current_status=status,
             qr_code_base64=f"data:image/png;base64,{qr_base64}"
         )
         db.add(passport)
         db.commit()
+
+        # Automatically create Collection Task in PENDING status
+        fill_score = min(100.0, (weight_kg / 5.0) * 100.0)
+        hazard_weight = 90.0 if category_code in ["WHITE", "YELLOW"] else 50.0
+        priority_score = round(0.5 * fill_score + 0.3 * hazard_weight + 0.2 * 50.0, 1)
+
+        task_id = f"TASK-{waste_id}"
+        collection_task = CollectionTask(
+            task_id=task_id,
+            waste_id=waste_id,
+            department=department_name,
+            waste_category=category_code,
+            weight_kg=weight_kg,
+            priority_score=priority_score,
+            priority_level="CRITICAL" if category_code == "WHITE" else "HIGH",
+            status="PENDING"
+        )
+        db.add(collection_task)
+        db.commit()
+
+        # Audit event for passport registration
+        self.audit_service.add_event(
+            db=db,
+            event_type="PASSPORT_CREATED",
+            payload={
+                "passport_id": passport_id,
+                "waste_id": waste_id,
+                "object_type": object_type,
+                "category": category_code,
+                "department": department_name,
+                "status": status
+            }
+        )
 
         return passport

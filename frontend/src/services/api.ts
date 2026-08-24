@@ -4,6 +4,11 @@ import type { WasteAnalysisResponse, WastePassport, CollectionTask, BinTelemetry
 const API_BASE = '/api';
 
 export const api = {
+  getSystemHealth: async () => {
+    const res = await axios.get(`${API_BASE}/system/health`);
+    return res.data;
+  },
+
   getModelStatus: async () => {
     const res = await axios.get(`${API_BASE}/system/model-status`);
     return res.data;

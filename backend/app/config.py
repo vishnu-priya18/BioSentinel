@@ -17,8 +17,16 @@ class Settings(BaseSettings):
 
     BASE_DIR: str = str(BASE_PATH)
 
-    # Database
+    # Database Configuration (Cloud DB or SQLite fallback)
     DATABASE_URL: str = f"sqlite:///{BASE_PATH}/biosentinel.db"
+
+    # Cloud Storage Configuration
+    STORAGE_PROVIDER: str = "LOCAL" # S3, AZURE, SUPABASE, or LOCAL
+    STORAGE_URL: str = ""
+    STORAGE_BUCKET: str = ""
+    STORAGE_REGION: str = ""
+    STORAGE_ACCESS_KEY: str = ""
+    STORAGE_SECRET_KEY: str = ""
 
     # ML Config
     ML_MODEL_DIR: str = str(BASE_PATH / "backend" / "ml" / "models")
@@ -33,3 +41,4 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 settings = Settings()
+

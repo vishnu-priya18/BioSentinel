@@ -26,6 +26,11 @@ wheels/
 *.db
 *.sqlite3
 
+# Uploads & Temp files
+backend/uploads/*
+!backend/uploads/.gitkeep
+~$*.pptx
+
 # Node / Frontend
 node_modules/
 frontend/node_modules/

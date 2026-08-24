@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Camera, LayoutDashboard, ShieldCheck, QrCode, Truck, Database, Activity, Settings, Cpu, Radio, BarChart2 } from 'lucide-react';
+import { Camera, LayoutDashboard, ShieldCheck, QrCode, Truck, Database, Activity, Settings, Cpu, Radio, BarChart2, Cloud, HardDrive } from 'lucide-react';
 import { api } from '../services/api';
 
 interface NavbarProps {
@@ -9,31 +9,35 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
   const [modelStatus, setModelStatus] = useState<any>(null);
+  const [healthStatus, setHealthStatus] = useState<any>(null);
 
   useEffect(() => {
-    fetchModelStatus();
+    fetchStatus();
   }, []);
 
-  const fetchModelStatus = async () => {
+  const fetchStatus = async () => {
     try {
-      const data = await api.getModelStatus();
-      setModelStatus(data);
+      const [mStatus, hStatus] = await Promise.all([
+        api.getModelStatus(),
+        api.getSystemHealth()
+      ]);
+      setModelStatus(mStatus);
+      setHealthStatus(hStatus);
     } catch (e) {
-      console.error('Failed to fetch model status', e);
+      console.error('Failed to fetch navbar status', e);
     }
   };
 
   const navItems = [
     { id: 'scan', label: 'SCAN WASTE', icon: Camera, highlight: true },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'analysis', label: 'AI vs Safety', icon: Activity },
     { id: 'verification', label: 'Verification', icon: ShieldCheck },
     { id: 'passport', label: 'Waste Passport', icon: QrCode },
     { id: 'collection', label: 'Collection', icon: Truck },
     { id: 'bins', label: 'Smart Bins', icon: Database },
-    { id: 'rover', label: 'Rover AMR', icon: Radio },
     { id: 'audit', label: 'Audit Chain', icon: Cpu },
-    { id: 'training', label: 'Model Training', icon: BarChart2 },
+    { id: 'training', label: 'AI Model', icon: BarChart2 },
+    { id: 'rover', label: 'Rover AMR', icon: Radio },
     { id: 'analytics', label: 'Analytics', icon: Activity },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
@@ -55,17 +59,39 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab }) => {
                   v1.0 OS
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium">PREDICTION ≠ PERMISSION</p>
+              <p className="text-[11px] text-slate-400 font-medium">SEE THE WASTE • VERIFY THE RISK • CONTROL THE FLOW</p>
             </div>
           </div>
 
-          {/* Model Health Status */}
-          <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs">
-            <div className={`w-2 h-2 rounded-full ${modelStatus?.installed ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-            <span className="text-slate-300 font-medium">Vision Model:</span>
-            <span className={`font-semibold ${modelStatus?.installed ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {modelStatus?.installed ? 'ONLINE (YOLOv8)' : 'NOT INSTALLED'}
-            </span>
+          {/* System Status Indicators */}
+          <div className="hidden lg:flex items-center space-x-3">
+            
+            {/* Cloud Connectivity Status */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs">
+              {healthStatus?.cloud_connected ? (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <Cloud className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-emerald-400 font-bold">CLOUD CONNECTED</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 rounded-full bg-amber-400" />
+                  <HardDrive className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="text-amber-400 font-semibold">CLOUD NOT CONFIGURED (DEV/LOCAL)</span>
+                </>
+              )}
+            </div>
+
+            {/* Vision Model Status */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/50 text-xs">
+              <div className={`w-2 h-2 rounded-full ${modelStatus?.installed ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+              <span className="text-slate-300 font-medium">Vision Model:</span>
+              <span className={`font-semibold ${modelStatus?.installed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {modelStatus?.installed ? 'ONLINE (YOLOv8)' : 'NOT INSTALLED'}
+              </span>
+            </div>
+
           </div>
 
           {/* Navigation Links */}

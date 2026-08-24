@@ -29,8 +29,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Ensure upload directory exists
+UPLOADS_DIR = Path(settings.BASE_DIR) / "backend" / "uploads"
+UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
+
 # Mount API endpoints under /api
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
 
 # Mount static frontend build if dist folder exists
 FRONTEND_DIST = Path(settings.BASE_DIR) / "frontend" / "dist"
