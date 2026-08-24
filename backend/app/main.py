@@ -2,7 +2,7 @@ import os
 import webbrowser
 import threading
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -37,7 +37,6 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 # Mount API endpoints under /api
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-
 # Mount static frontend build if dist folder exists
 FRONTEND_DIST = Path(settings.BASE_DIR) / "frontend" / "dist"
 
@@ -46,9 +45,14 @@ if FRONTEND_DIST.exists():
 
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
-        # Serve API docs or API routes normally
+        # Do not intercept API or docs routes
         if full_path.startswith("api") or full_path.startswith("docs") or full_path.startswith("openapi.json"):
-            return None
+            raise HTTPException(status_code=404, detail="API route not found")
+        
+        target_file = FRONTEND_DIST / full_path
+        if target_file.is_file():
+            return FileResponse(target_file)
+
         index_file = FRONTEND_DIST / "index.html"
         if index_file.exists():
             return FileResponse(index_file)
