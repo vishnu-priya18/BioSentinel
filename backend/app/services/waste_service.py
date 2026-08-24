@@ -37,7 +37,7 @@ class WasteService:
         department: str = "ICU",
         is_opaque_bag: bool = False
     ):
-        # 1. Save image to object storage (Cloud or Local fallback)
+        # 1. Save image to storage (Cloud or Local fallback)
         image_url, storage_key = self.storage_service.save_image(image_bytes, filename_prefix="scan")
         storage_health = self.storage_service.check_health()
 
@@ -45,32 +45,49 @@ class WasteService:
         try:
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         except Exception:
-            # Fallback for SVG or synthetic canvas data
             image = Image.new("RGB", (640, 480), color=(15, 23, 42))
 
-        # 3. Vision analysis (returns all detected objects)
+        # 3. Vision analysis (returns actual detected objects from YOLO / CV Engine)
         cv_result = self.classifier_adapter.analyze_frame(image)
         model_installed = cv_result["model_installed"]
-        all_detections = cv_result.get("all_detections", [cv_result["object"]])
+        raw_detections = cv_result.get("all_detections", [cv_result["object"]])
 
-        # 4. Multi-object prioritization: Critical Sharp > Biohazard > Plastic > Glass
-        primary = all_detections[0]
-        for det in all_detections:
-            hazard_eval = self.safety_engine.evaluate_hazard(det["class_name"])
-            if hazard_eval.get("is_sharp", False):
-                primary = det
-                break
+        # Filter out zero-confidence unknown objects for rendering clean bounding boxes
+        valid_detections = [
+            d for d in raw_detections 
+            if d.get("confidence", 0.0) > 0.15 and d.get("class_name", "").upper() not in ["UNKNOWN_OBJECT", "UNKNOWN_MEDICAL_WASTE"]
+        ]
 
-        object_name = primary["class_name"].lower()
-        confidence = primary["confidence"]
+        if valid_detections:
+            # Multi-object prioritization: Critical Sharp > Biohazard > Plastic > Glass
+            primary = valid_detections[0]
+            for det in valid_detections:
+                hazard_eval = self.safety_engine.evaluate_hazard(det["class_name"])
+                if hazard_eval.get("is_sharp", False):
+                    primary = det
+                    break
+            object_name = primary["class_name"].lower()
+            confidence = primary["confidence"]
+            has_detection = True
+            rendered_detections = valid_detections
+        else:
+            primary = {
+                "class_name": "unknown_object",
+                "confidence": 0.0,
+                "bbox": {"x": 0.0, "y": 0.0, "width": 0.0, "height": 0.0, "x1": 0.0, "y1": 0.0, "x2": 0.0, "y2": 0.0}
+            }
+            object_name = "unknown_object"
+            confidence = 0.0
+            has_detection = False
+            rendered_detections = []
 
-        # 5. Deterministic Waste Category Stream
+        # 4. Deterministic Waste Category Stream
         category = self.category_mapper.get_category_for_object(object_name)
 
-        # 6. Safety Policy Engine Hazard Gate
+        # 5. Safety Policy Engine Hazard Gate
         hazard_info = self.safety_engine.evaluate_hazard(object_name)
 
-        # 7. Evidence Fusion
+        # 6. Evidence Fusion
         evidence_info = self.evidence_engine.fuse_evidence(
             vision_category=category["code"],
             vision_confidence=confidence,
@@ -80,7 +97,7 @@ class WasteService:
             department=department
         )
 
-        # 8. Deterministic Policy Decision
+        # 7. Deterministic Policy Decision
         decision_info = self.policy_engine.evaluate_decision(
             object_name=object_name,
             confidence=confidence,
@@ -90,7 +107,7 @@ class WasteService:
             model_installed=model_installed
         )
 
-        # 9. Reasoning Checklist
+        # 8. Reasoning Checklist
         why_checklist = self.reasoning_engine.build_why_checklist(
             object_name=object_name,
             confidence=confidence,
@@ -100,7 +117,7 @@ class WasteService:
             evidence_info=evidence_info
         )
 
-        # 10. Counterfactual Guidance
+        # 9. Counterfactual Guidance
         what_safe_checklist = self.counterfactual_engine.build_counterfactual_recommendations(
             object_name=object_name,
             confidence=confidence,
@@ -120,16 +137,17 @@ class WasteService:
                 "hazard": hazard_info["severity"],
                 "decision": decision_info["state"],
                 "image_url": image_url,
-                "all_detections": [d["class_name"] for d in all_detections]
+                "all_detections": [d["class_name"] for d in rendered_detections]
             }
         )
 
         return {
             "model_installed": model_installed,
+            "has_detection": has_detection,
             "image_url": image_url,
             "storage_status": storage_health,
             "object": primary,
-            "all_detections": all_detections,
+            "all_detections": rendered_detections,
             "category": category,
             "hazard": hazard_info,
             "decision": {

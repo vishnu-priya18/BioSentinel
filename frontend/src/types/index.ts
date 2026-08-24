@@ -52,7 +52,10 @@ export interface EvidenceFusionResult {
 
 export interface WasteAnalysisResponse {
   model_installed: boolean;
+  has_detection?: boolean;
+  image_url?: string;
   object: ObjectDetectionResult;
+  all_detections?: ObjectDetectionResult[];
   category: CategoryInfo;
   hazard: HazardAssessmentResult;
   decision: DecisionResult;

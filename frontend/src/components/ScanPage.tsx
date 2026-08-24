@@ -1,36 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, AlertCircle, PackageCheck, Zap, Info, Upload, HelpCircle } from 'lucide-react';
+import { Camera, RefreshCw, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, AlertCircle, PackageCheck, Zap, Info, Upload, HelpCircle, Image as ImageIcon } from 'lucide-react';
 import { api } from '../services/api';
-import type { WasteAnalysisResponse, WastePassport } from '../types';
-
-// Pre-rendered high-quality test image Data URIs for judges to test 1-click golden path
-const DEMO_PRESET_IMAGES: Record<string, { name: string; type: string; dataUrl: string }> = {
-  syringe: {
-    name: "Syringe Sample (Critical Sharp)",
-    type: "syringe",
-    dataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='100%' height='100%' fill='%230f172a'/><g transform='translate(120, 140)'><rect x='100' y='80' width='220' height='40' fill='%23cbd5e1' rx='5' stroke='%2394a3b8' stroke-width='3'/><rect x='320' y='90' width='80' height='20' fill='%230284c7'/><polygon points='400,98 470,100 400,102' fill='%23e2e8f0'/><rect x='60' y='70' width='40' height='60' fill='%2364748b'/><line x1='0' y1='100' x2='60' y2='100' stroke='%2394a3b8' stroke-width='8'/><line x1='140' y1='80' x2='140' y2='120' stroke='%23475569' stroke-width='3'/><line x1='180' y1='80' x2='180' y2='120' stroke='%23475569' stroke-width='3'/><line x1='220' y1='80' x2='220' y2='120' stroke='%23475569' stroke-width='3'/><line x1='260' y1='80' x2='260' y2='120' stroke='%23475569' stroke-width='3'/><text x='160' y='60' fill='%2338bdf8' font-family='monospace' font-size='18' font-weight='bold'>STERILE SYRINGE 10mL</text></g></svg>"
-  },
-  gauze: {
-    name: "Blood-Soaked Gauze (Infectious)",
-    type: "blood_soaked_gauze",
-    dataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='100%' height='100%' fill='%230f172a'/><g transform='translate(180, 120)'><rect x='40' y='40' width='240' height='200' fill='%23f8fafc' rx='10' stroke='%23cbd5e1' stroke-width='4'/><path d='M80 70 Q140 50 180 110 T240 160 Q200 220 140 200 T70 140 Z' fill='%23dc2626' opacity='0.85'/><circle cx='130' cy='120' r='35' fill='%23991b1b'/><text x='55' y='270' fill='%23f87171' font-family='monospace' font-size='16' font-weight='bold'>BLOOD SOAKED DRESSING</text></g></svg>"
-  },
-  iv_tube: {
-    name: "IV Tube (Plastic Stream)",
-    type: "iv_tube",
-    dataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='100%' height='100%' fill='%230f172a'/><path d='M100 240 Q 250 80, 400 240 T 540 240' fill='none' stroke='%2338bdf8' stroke-width='16' stroke-linecap='round'/><rect x='480' y='210' width='40' height='60' fill='%230284c7' rx='5'/><text x='200' y='360' fill='%2338bdf8' font-family='monospace' font-size='16' font-weight='bold'>CONTAMINATED IV TUBING</text></svg>"
-  },
-  vial: {
-    name: "Glass Vial (Glass Stream)",
-    type: "glass_vial",
-    dataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='100%' height='100%' fill='%230f172a'/><g transform='translate(240, 100)'><rect x='40' y='80' width='80' height='180' fill='%2338bdf8' fill-opacity='0.25' stroke='%237dd3fc' stroke-width='4' rx='8'/><rect x='50' y='50' width='60' height='30' fill='%230284c7'/><rect x='45' y='35' width='70' height='15' fill='%2364748b'/><text x='15' y='300' fill='%237dd3fc' font-family='monospace' font-size='16' font-weight='bold'>MEDICINE VIAL</text></g></svg>"
-  },
-  unknown: {
-    name: "Unknown Waste Item",
-    type: "unknown_object",
-    dataUrl: "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='640' height='480' viewBox='0 0 640 480'><rect width='100%' height='100%' fill='%230f172a'/><path d='M200 150 L440 150 L380 330 L160 330 Z' fill='%23334155' stroke='%23475569' stroke-width='4'/><text x='240' y='250' fill='%2394a3b8' font-family='monospace' font-size='48' font-weight='bold'>?</text><text x='180' y='380' fill='%2394a3b8' font-family='monospace' font-size='16' font-weight='bold'>UNCLEAR OPAQUE OBJECT</text></svg>"
-  }
-};
+import type { WasteAnalysisResponse, WastePassport, ObjectDetectionResult } from '../types';
 
 export const ScanPage: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -43,10 +14,8 @@ export const ScanPage: React.FC = () => {
   const [analysisResult, setAnalysisResult] = useState<WasteAnalysisResponse | null>(null);
   const [registeredPassport, setRegisteredPassport] = useState<WastePassport | null>(null);
   const [uploadedImagePreview, setUploadedImagePreview] = useState<string | null>(null);
-  const [isDemoPresetMode, setIsDemoPresetMode] = useState<boolean>(false);
-  const [presetLabel, setPresetLabel] = useState<string | null>(null);
 
-  // Sensor Evidence Fusion Inputs
+  // Sensor Evidence Inputs
   const [barcodeInput, setBarcodeInput] = useState<string>('');
   const [weightInput, setWeightInput] = useState<number>(0.25);
   const [departmentInput, setDepartmentInput] = useState<string>('ICU');
@@ -55,10 +24,10 @@ export const ScanPage: React.FC = () => {
   const [systemHealth, setSystemHealth] = useState<any>(null);
 
   useEffect(() => {
-    fetchInitialStatus();
+    fetchSystemHealth();
   }, []);
 
-  const fetchInitialStatus = async () => {
+  const fetchSystemHealth = async () => {
     try {
       const hStatus = await api.getSystemHealth();
       setSystemHealth(hStatus);
@@ -70,8 +39,6 @@ export const ScanPage: React.FC = () => {
   const startCamera = async () => {
     setCameraError(null);
     setUploadedImagePreview(null);
-    setIsDemoPresetMode(false);
-    setPresetLabel(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' }
@@ -83,7 +50,7 @@ export const ScanPage: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Camera access error:', err);
-      setCameraError('Unable to access camera. Please allow permissions or select a Test Preset Image below.');
+      setCameraError('Camera unavailable or permission denied. Please upload an image file instead.');
     }
   };
 
@@ -111,6 +78,7 @@ export const ScanPage: React.FC = () => {
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const base64Image = canvas.toDataURL('image/jpeg', 0.85);
+    setUploadedImagePreview(base64Image);
 
     await sendAnalysisRequest(base64Image);
   };
@@ -120,8 +88,6 @@ export const ScanPage: React.FC = () => {
     if (!file) return;
 
     stopCamera();
-    setIsDemoPresetMode(false);
-    setPresetLabel(null);
 
     const reader = new FileReader();
     reader.onload = async () => {
@@ -130,17 +96,6 @@ export const ScanPage: React.FC = () => {
       await sendAnalysisRequest(base64);
     };
     reader.readAsDataURL(file);
-  };
-
-  const handleSelectPreset = async (presetKey: string) => {
-    stopCamera();
-    const preset = DEMO_PRESET_IMAGES[presetKey];
-    if (!preset) return;
-
-    setIsDemoPresetMode(true);
-    setPresetLabel(preset.name);
-    setUploadedImagePreview(preset.dataUrl);
-    await sendAnalysisRequest(preset.dataUrl);
   };
 
   const sendAnalysisRequest = async (base64Image: string) => {
@@ -205,49 +160,45 @@ export const ScanPage: React.FC = () => {
     }
   };
 
+  const allDetections = analysisResult?.all_detections || [];
+  const hasValidDetections = allDetections.length > 0 && allDetections[0].confidence > 0.15;
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       
-      {/* Central Visual Invariant Banner */}
+      {/* System Thesis Header */}
       <div className="glass-panel p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border-cyan-500/30 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="space-y-1 text-center md:text-left">
           <div className="flex items-center space-x-2 justify-center md:justify-start">
             <ShieldCheck className="w-5 h-5 text-cyan-400" />
-            <h2 className="text-base font-black text-white tracking-wide">CORE INNOVATION: AI PERCEPTION ≠ OPERATIONAL PERMISSION</h2>
+            <h2 className="text-base font-black text-white tracking-wide">REAL AI PERCEPTION & DETERMINISTIC SAFETY GATE</h2>
           </div>
           <p className="text-xs text-slate-400">
-            The AI identifies the waste object. The deterministic <strong className="text-cyan-300">Safety Policy Engine</strong> decides whether automation is safe. High confidence NEVER overrides safety rules.
+            Upload an actual waste photograph or capture with webcam. The AI performs real model inference and returns measured bounding boxes.
           </p>
         </div>
 
-        {/* Demo Mode / Cloud Indicator */}
+        {/* Cloud Connectivity Indicator */}
         <div className="flex items-center space-x-2 text-xs font-mono">
           <span className={`px-3 py-1 rounded-lg font-bold border ${systemHealth?.cloud_connected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
-            {systemHealth?.cloud_connected ? '● CLOUD CONNECTED' : '○ LOCAL PERSISTENCE'}
+            {systemHealth?.cloud_connected ? '● CLOUD CONNECTED' : '○ CLOUD NOT CONFIGURED (DEV/LOCAL MODE)'}
           </span>
-          {isDemoPresetMode && (
-            <span className="px-3 py-1 rounded-lg font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
-              DEMO TEST IMAGE
-            </span>
-          )}
         </div>
       </div>
 
-      {/* Main Grid: Left Camera/Preview Viewport, Right AI Decision */}
+      {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Column: Camera / Image Viewport & Preset Buttons (7 Cols) */}
+        {/* Left Column: Image Viewport & Controls (7 Cols) */}
         <div className="lg:col-span-7 space-y-4">
           <div className="glass-panel rounded-2xl p-4 space-y-4">
             
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Camera className="w-5 h-5 text-cyan-400" />
-                <h3 className="text-sm font-bold tracking-wide text-white">LIVE WASTE PERCEPTION FEED</h3>
+                <h3 className="text-sm font-bold tracking-wide text-white">REAL WASTE CAMERA / IMAGE VIEWPORT</h3>
               </div>
-              <span className="text-xs font-mono text-slate-400">
-                {isDemoPresetMode ? `DEMO: ${presetLabel}` : 'REAL VISION INFERENCE'}
-              </span>
+              <span className="text-xs font-mono text-slate-400">YOLOv8 PERCEPTION ENGINE</span>
             </div>
 
             {/* Hidden File Input */}
@@ -265,36 +216,36 @@ export const ScanPage: React.FC = () => {
               {!isCameraActive && !uploadedImagePreview && (
                 <div className="text-center space-y-3 p-6">
                   <div className="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-slate-500">
-                    <Camera className="w-8 h-8 text-cyan-400" />
+                    <ImageIcon className="w-8 h-8 text-cyan-400" />
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-300">Camera Feed Idle</p>
-                    <p className="text-xs text-slate-500">Upload a photo, open webcam, or select a Demo Test Image below to scan</p>
+                    <p className="text-sm font-semibold text-slate-300">No Image Uploaded</p>
+                    <p className="text-xs text-slate-500">Select an image file or open camera feed to analyze waste</p>
                   </div>
                   <div className="flex items-center justify-center space-x-3 pt-2">
                     <button
-                      onClick={startCamera}
+                      onClick={() => fileInputRef.current?.click()}
                       className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 font-bold text-xs text-slate-950 shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all flex items-center space-x-2"
                     >
-                      <Camera className="w-4 h-4" />
-                      <span>OPEN CAMERA</span>
+                      <Upload className="w-4 h-4" />
+                      <span>UPLOAD IMAGE FILE</span>
                     </button>
                     <button
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={startCamera}
                       className="px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 font-bold text-xs text-slate-200 hover:bg-slate-700 transition-all flex items-center space-x-2"
                     >
-                      <Upload className="w-4 h-4 text-cyan-400" />
-                      <span>UPLOAD IMAGE</span>
+                      <Camera className="w-4 h-4 text-cyan-400" />
+                      <span>OPEN CAMERA</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Uploaded or Demo Image Preview */}
+              {/* Uploaded Image Preview */}
               {uploadedImagePreview && !isCameraActive && (
                 <img
                   src={uploadedImagePreview}
-                  alt="Waste Item Viewport"
+                  alt="Uploaded Waste Photo"
                   className="w-full h-full object-contain bg-slate-950"
                 />
               )}
@@ -312,26 +263,31 @@ export const ScanPage: React.FC = () => {
                 className="absolute inset-0 w-full h-full pointer-events-none"
               />
 
-              {/* Bounding Box Visual Overlay if Detections Present */}
-              {analysisResult && analysisResult.object && analysisResult.object.bbox && (
-                <div
-                  className="absolute border-2 border-cyan-400 bg-cyan-400/10 pointer-events-none rounded-sm transition-all"
-                  style={{
-                    left: `${Math.max(5, Math.min(80, (analysisResult.object.bbox.x / 640) * 100))}%`,
-                    top: `${Math.max(5, Math.min(80, (analysisResult.object.bbox.y / 480) * 100))}%`,
-                    width: `${Math.max(20, Math.min(90, (analysisResult.object.bbox.width / 640) * 100))}%`,
-                    height: `${Math.max(20, Math.min(90, (analysisResult.object.bbox.height / 480) * 100))}%`
-                  }}
-                >
-                  <div className="absolute -top-7 left-0 bg-cyan-400 text-slate-950 px-2 py-0.5 text-[11px] font-mono font-bold rounded-t shadow flex items-center space-x-1">
-                    <span>{analysisResult.object.class_name.toUpperCase()}</span>
-                    <span>({Math.round(analysisResult.object.confidence * 100)}%)</span>
+              {/* Bounding Box Visual Overlays (Rendered from actual model detections) */}
+              {hasValidDetections && allDetections.map((det: ObjectDetectionResult, index: number) => {
+                const bbox = det.bbox;
+                if (!bbox) return null;
+                return (
+                  <div
+                    key={index}
+                    className="absolute border-2 border-cyan-400 bg-cyan-400/10 pointer-events-none rounded-sm transition-all"
+                    style={{
+                      left: `${Math.max(2, Math.min(85, (bbox.x / 640) * 100))}%`,
+                      top: `${Math.max(2, Math.min(85, (bbox.y / 480) * 100))}%`,
+                      width: `${Math.max(15, Math.min(95, (bbox.width / 640) * 100))}%`,
+                      height: `${Math.max(15, Math.min(95, (bbox.height / 480) * 100))}%`
+                    }}
+                  >
+                    <div className="absolute -top-7 left-0 bg-cyan-400 text-slate-950 px-2 py-0.5 text-[11px] font-mono font-bold rounded-t shadow flex items-center space-x-1 whitespace-nowrap">
+                      <span>{det.class_name.toUpperCase()}</span>
+                      <span>({Math.round(det.confidence * 100)}%)</span>
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })}
             </div>
 
-            {/* Camera / Action Controls */}
+            {/* Controls Row */}
             <div className="flex items-center justify-between gap-3">
               {isCameraActive ? (
                 <>
@@ -343,12 +299,12 @@ export const ScanPage: React.FC = () => {
                     {analyzing ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        <span>RUNNING VISION INFERENCE...</span>
+                        <span>RUNNING AI INFERENCE...</span>
                       </>
                     ) : (
                       <>
                         <Zap className="w-4 h-4 fill-current" />
-                        <span>SCAN WASTE</span>
+                        <span>CAPTURE & SCAN</span>
                       </>
                     )}
                   </button>
@@ -361,50 +317,45 @@ export const ScanPage: React.FC = () => {
                   </button>
                 </>
               ) : (
-                <div className="flex items-center justify-between w-full">
-                  <div className="text-xs font-mono text-slate-400">
-                    {isDemoPresetMode ? 'Mode: DEMO TEST IMAGE' : 'Mode: UPLOAD / CAMERA'}
-                  </div>
+                <div className="flex items-center justify-between w-full gap-3">
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-4 py-2 rounded-lg bg-slate-800 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition-colors flex items-center space-x-2"
+                    className="flex-1 py-3 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 hover:bg-slate-700 transition-all flex items-center justify-center space-x-2"
                   >
                     <Upload className="w-4 h-4 text-cyan-400" />
-                    <span>Upload File</span>
+                    <span>SELECT NEW PHOTO</span>
                   </button>
+
+                  {uploadedImagePreview && (
+                    <button
+                      onClick={() => sendAnalysisRequest(uploadedImagePreview)}
+                      disabled={analyzing}
+                      className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-500 via-blue-500 to-indigo-600 text-slate-950 font-extrabold text-xs shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all flex items-center justify-center space-x-2"
+                    >
+                      {analyzing ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>RUNNING AI INFERENCE...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-4 h-4 fill-current" />
+                          <span>SCAN WASTE IMAGE</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
-              {cameraError && (
-                <div className="text-xs text-red-400 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 font-mono">
-                  {cameraError}
-                </div>
-              )}
-
-            {/* Quick Demo Preset Test Image Buttons for Judges */}
-            <div className="pt-3 border-t border-slate-800 space-y-2">
-              <span className="text-[11px] font-mono text-slate-400 block font-bold">
-                ⚡ 1-CLICK DEMO TEST IMAGES (SIH JUDGING PRESETS):
-              </span>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {Object.entries(DEMO_PRESET_IMAGES).map(([key, item]) => (
-                  <button
-                    key={key}
-                    onClick={() => handleSelectPreset(key)}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold text-left border transition-all ${
-                      key === 'syringe'
-                        ? 'bg-red-500/10 border-red-500/40 text-red-300 hover:bg-red-500/20'
-                        : 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-700'
-                    }`}
-                  >
-                    {item.name}
-                  </button>
-                ))}
+            {cameraError && (
+              <div className="text-xs text-red-400 p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 font-mono">
+                {cameraError}
               </div>
-            </div>
+            )}
 
-            {/* Evidence Fusion Sensor Inputs */}
+            {/* Department & Sensor Controls */}
             <div className="pt-3 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="text-[11px] font-mono text-slate-400 block mb-1">DEPARTMENT ORIGIN</label>
@@ -477,9 +428,9 @@ export const ScanPage: React.FC = () => {
             <div className="glass-panel rounded-2xl p-8 text-center space-y-3">
               <ShieldCheck className="w-10 h-10 text-slate-600 mx-auto" />
               <div>
-                <h4 className="text-sm font-bold text-slate-300">Awaiting Waste Item Scan</h4>
+                <h4 className="text-sm font-bold text-slate-300">Awaiting Waste Image Upload</h4>
                 <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                  Click <strong className="text-cyan-400">Syringe Sample</strong> or <strong className="text-cyan-400">UPLOAD IMAGE</strong> to analyze medical waste.
+                  Click <strong className="text-cyan-400">UPLOAD IMAGE FILE</strong> or <strong className="text-cyan-400">OPEN CAMERA</strong> to run real AI inference.
                 </p>
               </div>
             </div>
@@ -516,13 +467,15 @@ export const ScanPage: React.FC = () => {
                   <div>
                     <span className="text-[10px] font-mono text-slate-400 block">DETECTED OBJECT</span>
                     <h3 className="text-lg font-black text-cyan-300 uppercase tracking-wide">
-                      {analysisResult.object.class_name.replace(/_/g, ' ')}
+                      {hasValidDetections 
+                        ? analysisResult.object.class_name.replace(/_/g, ' ') 
+                        : 'NO SUPPORTED OBJECT DETECTED'}
                     </h3>
                   </div>
                   <div className="text-right">
                     <span className="text-[10px] font-mono text-slate-400 block">AI CONFIDENCE</span>
                     <span className="text-base font-extrabold font-mono text-cyan-400">
-                      {Math.round(analysisResult.object.confidence * 100)}%
+                      {hasValidDetections ? `${Math.round(analysisResult.object.confidence * 100)}%` : '0%'}
                     </span>
                   </div>
                 </div>
@@ -549,12 +502,12 @@ export const ScanPage: React.FC = () => {
                     </span>
                   </div>
                   <span className={`px-3 py-1 rounded-md text-[10px] font-mono font-bold ${analysisResult.hazard.is_sharp ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'}`}>
-                    {analysisResult.hazard.is_sharp ? 'SHARP DETECTED' : 'NON-SHARP'}
+                    {analysisResult.hazard.is_sharp ? 'SHARP DETECTED' : (hasValidDetections ? 'NON-SHARP' : 'NO OBJECT')}
                   </span>
                 </div>
 
-                {/* Bounding Box Coordinates (Proves real computer vision output) */}
-                {analysisResult.object.bbox && (
+                {/* Bounding Box Coordinates */}
+                {hasValidDetections && analysisResult.object.bbox && (
                   <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80 text-[11px] font-mono text-slate-400 space-y-1">
                     <span className="text-[10px] text-cyan-400 block font-bold">MODEL BOUNDING BOX COORDINATES:</span>
                     <p className="text-slate-300">
