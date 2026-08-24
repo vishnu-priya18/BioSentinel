@@ -272,10 +272,10 @@ export const ScanPage: React.FC = () => {
                     key={index}
                     className="absolute border-2 border-cyan-400 bg-cyan-400/10 pointer-events-none rounded-sm transition-all"
                     style={{
-                      left: `${Math.max(2, Math.min(85, (bbox.x / 640) * 100))}%`,
-                      top: `${Math.max(2, Math.min(85, (bbox.y / 480) * 100))}%`,
-                      width: `${Math.max(15, Math.min(95, (bbox.width / 640) * 100))}%`,
-                      height: `${Math.max(15, Math.min(95, (bbox.height / 480) * 100))}%`
+                      left: `${Math.max(0, Math.min(90, (bbox.x / ((bbox as any).img_width || 640)) * 100))}%`,
+                      top: `${Math.max(0, Math.min(90, (bbox.y / ((bbox as any).img_height || 480)) * 100))}%`,
+                      width: `${Math.max(5, Math.min(100, (bbox.width / ((bbox as any).img_width || 640)) * 100))}%`,
+                      height: `${Math.max(5, Math.min(100, (bbox.height / ((bbox as any).img_height || 480)) * 100))}%`
                     }}
                   >
                     <div className="absolute -top-7 left-0 bg-cyan-400 text-slate-950 px-2 py-0.5 text-[11px] font-mono font-bold rounded-t shadow flex items-center space-x-1 whitespace-nowrap">
